@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import Document from '../models/Document';
+import Document, { IAuthor } from '../models/Document.js';
 
 // 3.2 POST /api/documents
 export const createDocument = async (req: Request, res: Response) => {
@@ -48,7 +48,18 @@ export const getDocumentBySlug = async (req: Request, res: Response) => {
       return res.status(404).json({ message: 'Document not found' });
     }
 
-    // [PHASE 4 Placeholder: Lazy migration logic will go here]
+    // Phase 4: Lazy migration logic
+    if (typeof document.metadata.author === 'string') {
+      const oldAuthorName = document.metadata.author as string;
+      document.metadata.author = {
+        id: null,
+        name: oldAuthorName,
+        email: null
+      };
+      // We don't necessarily save it back to DB here unless specified, 
+      // but the response needs to show the transformed version.
+    }
+
     return res.status(200).json(document);
   } catch (error: any) {
     return res.status(500).json({ message: error.message });
@@ -116,6 +127,89 @@ export const updateDocument = async (req: Request, res: Response) => {
 
     // Version mismatch
     return res.status(409).json(latestDoc);
+  } catch (error: any) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+// 3.4 GET /api/search?q=...&tags=...
+export const searchDocuments = async (req: Request, res: Response) => {
+  try {
+    const { q, tags } = req.query;
+    const query: any = {};
+
+    if (q) {
+      query.$text = { $search: q as string };
+    }
+
+    if (tags) {
+      const tagsArray = (tags as string).split(',');
+      query.tags = { $all: tagsArray };
+    }
+
+    const projection = q ? { score: { $meta: 'textScore' } } : {};
+    const sort = q ? { score: { $meta: 'textScore' } } : { 'metadata.updatedAt': -1 };
+
+    const results = await Document.find(query, projection).sort(sort as any);
+    return res.status(200).json(results);
+  } catch (error: any) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+// 3.5 GET /api/analytics/most-edited
+export const getMostEdited = async (req: Request, res: Response) => {
+  try {
+    const mostEdited = await Document.aggregate([
+      {
+        $project: {
+          slug: 1,
+          title: 1,
+          editCount: { $size: '$revision_history' }
+        }
+      },
+      { $sort: { editCount: -1 } },
+      { $limit: 10 }
+    ]);
+    return res.status(200).json(mostEdited);
+  } catch (error: any) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+// 3.5 GET /api/analytics/tag-cooccurrence
+export const getTagCooccurrence = async (req: Request, res: Response) => {
+  try {
+    const cooccurrence = await Document.aggregate([
+      // Unwind tags twice to create pairs
+      { $unwind: '$tags' },
+      { $addFields: { tagA: '$tags' } },
+      { $lookup: {
+          from: 'documents',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'originalDoc'
+      }},
+      { $unwind: '$originalDoc' },
+      { $unwind: '$originalDoc.tags' },
+      { $project: {
+          tagA: 1,
+          tagB: '$originalDoc.tags'
+      }},
+      // Filter out same-tag pairs and ensure deterministic order to avoid [A,B] and [B,A]
+      { $match: { $expr: { $lt: ['$tagA', '$tagB'] } } },
+      { $group: {
+          _id: { tags: ['$tagA', '$tagB'] },
+          count: { $sum: 1 }
+      }},
+      { $project: {
+          _id: 0,
+          tags: '$_id.tags',
+          count: 1
+      }},
+      { $sort: { count: -1 } }
+    ]);
+    return res.status(200).json(cooccurrence);
   } catch (error: any) {
     return res.status(500).json({ message: error.message });
   }

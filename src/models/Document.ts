@@ -57,4 +57,3 @@ const DocumentSchema = new Schema<IDocument>({
 DocumentSchema.index({ title: 'text', content: 'text' });
 
 export default mongoose.model<IDocument>('Document', DocumentSchema);
- Riverside
