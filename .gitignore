@@ -1,2 +1,4 @@
 task-requirements.txt
 plan.md
+node_modules/
+dist/
