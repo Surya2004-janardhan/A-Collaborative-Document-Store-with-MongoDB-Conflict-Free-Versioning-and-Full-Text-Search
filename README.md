@@ -21,6 +21,13 @@ Launch the entire stack (MongoDB + API):
 docker-compose up --build
 ```
 
+### Running Tests
+To run the automated test suite (includes unit, integration, and concurrency tests):
+```bash
+npm test
+```
+*Note: Tests use an in-memory database and do not require a running MongoDB instance.*
+
 ### Initial Data Seeding
 The database must be seeded with initial documents for testing:
 ```bash

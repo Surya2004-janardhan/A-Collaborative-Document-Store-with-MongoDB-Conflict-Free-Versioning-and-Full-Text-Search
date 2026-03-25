@@ -75,4 +75,17 @@ Uses the `$project` stage with `$size` operator on the `revision_history` array 
 - `src/scripts/seed.ts`: High-performance data generator (10k docs).
 - `src/scripts/migrate_author_schema.ts`: Bulk migration utility.
 
+---
+
+## 🧪 Testing Strategy
+
+The project includes a comprehensive test suite in the `tests/` directory:
+- **Isolated Environment**: Uses `mongodb-memory-server` to provide an ephemeral MongoDB instance for each test run.
+- **Integration Tests**: Uses `Supertest` to simulate HTTP requests to the Express app.
+- **Coverage**:
+  - **Positive Cases**: Valid CRUD, Search, and Analytics.
+  - **Negative/Conflict Cases**: Outdated OCC versions (409), non-existent docs (404).
+  - **Edge Cases**: Special character slug generation, Lazy Migration on-read.
+  - **Concurrency**: Parallel simultaneous updates simulation to verify OCC atomicity.
+
 
