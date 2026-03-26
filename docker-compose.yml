@@ -15,7 +15,7 @@ services:
   api:
     build: .
     ports:
-      - "3000:3000"
+      - "0.0.0.0:3000:3000"
     environment:
       - MONGO_URI=mongodb://mongodb:27017/wikidb
       - DATABASE_NAME=wikidb
