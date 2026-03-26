@@ -22,11 +22,18 @@ docker-compose up --build
 ```
 
 ### Running Tests
-To run the automated test suite (includes unit, integration, and concurrency tests):
+Automated tests can be run locally or inside the Docker container:
+
+**Via Docker (Recommended for consistency):**
+```bash
+docker compose exec api npm test
+```
+
+**Locally:**
 ```bash
 npm test
 ```
-*Note: Tests use an in-memory database and do not require a running MongoDB instance.*
+*Note: Tests use a dedicated `wikidb_test` database.*
 
 ### Initial Data Seeding
 The database must be seeded with initial documents for testing:

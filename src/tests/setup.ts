@@ -1,9 +1,15 @@
 import mongoose from 'mongoose';
 
-const TEST_MONGO_URI = process.env.MONGO_URI_TEST || 'mongodb://localhost:27017/wikidb_test';
+const TEST_MONGO_URI = process.env.MONGO_URI 
+  ? process.env.MONGO_URI.replace(/\/([^/]+)$/, '/wikidb_test')
+  : 'mongodb://127.0.0.1:27017/wikidb_test';
 
 export const connect = async () => {
-  await mongoose.connect(TEST_MONGO_URI);
+  console.log(`Connecting to Test DB at: ${TEST_MONGO_URI}`);
+  await mongoose.connect(TEST_MONGO_URI, {
+    serverSelectionTimeoutMS: 5000, // Fail fast if can't find server
+    connectTimeoutMS: 10000,
+  });
 };
 
 export const close = async () => {
