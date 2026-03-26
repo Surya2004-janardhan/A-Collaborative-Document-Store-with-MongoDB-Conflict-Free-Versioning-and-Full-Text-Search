@@ -19,15 +19,17 @@ app.get('/health', (req, res) => {
   res.json({ status: 'healthy', db: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected' });
 });
 
-mongoose.connect(MONGO_URI)
-  .then(() => {
-    console.log('Connected to MongoDB');
-    app.listen(Number(PORT), '0.0.0.0', () => {
-      console.log(`Server is running on port ${PORT} (0.0.0.0)`);
+if (process.env.NODE_ENV !== 'test') {
+  mongoose.connect(MONGO_URI)
+    .then(() => {
+      console.log('Connected to MongoDB');
+      app.listen(Number(PORT), '0.0.0.0', () => {
+        console.log(`Server is running on port ${PORT} (0.0.0.0)`);
+      });
+    })
+    .catch((err) => {
+      console.error('Failed to connect to MongoDB', err);
     });
-  })
-  .catch((err) => {
-    console.error('Failed to connect to MongoDB', err);
-  });
+}
 
 export default app;

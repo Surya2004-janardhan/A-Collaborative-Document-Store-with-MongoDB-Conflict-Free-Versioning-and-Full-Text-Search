@@ -1,18 +1,16 @@
-import { MongoMemoryServer } from 'mongodb-memory-server';
 import mongoose from 'mongoose';
 
-let mongoServer: MongoMemoryServer;
+const TEST_MONGO_URI = process.env.MONGO_URI_TEST || 'mongodb://localhost:27017/wikidb_test';
 
 export const connect = async () => {
-  mongoServer = await MongoMemoryServer.create();
-  const uri = mongoServer.getUri();
-  await mongoose.connect(uri);
+  await mongoose.connect(TEST_MONGO_URI);
 };
 
 export const close = async () => {
-  await mongoose.connection.dropDatabase();
+  if (mongoose.connection.db) {
+    await mongoose.connection.db.dropDatabase();
+  }
   await mongoose.connection.close();
-  await mongoServer.stop();
 };
 
 export const clear = async () => {

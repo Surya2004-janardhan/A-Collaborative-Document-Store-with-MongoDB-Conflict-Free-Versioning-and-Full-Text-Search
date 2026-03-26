@@ -9,7 +9,7 @@
     "dev": "ts-node-dev --respawn --transpile-only --esm src/index.ts",
     "build": "rimraf dist && tsc",
     "seed": "node --loader ts-node/esm src/scripts/seed.ts",
-    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles"
+    "test": "NODE_ENV=test node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles"
   },
   "keywords": [],
   "author": "",

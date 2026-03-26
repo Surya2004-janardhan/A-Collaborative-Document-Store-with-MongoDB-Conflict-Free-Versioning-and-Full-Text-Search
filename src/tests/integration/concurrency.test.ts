@@ -1,7 +1,7 @@
 import request from 'supertest';
-import app from '../../src/index.js';
+import app from '../../index.js';
 import * as dbHandler from '../setup.js';
-import Document from '../../src/models/Document.js';
+import Document from '../../models/Document.js';
 
 beforeAll(async () => await dbHandler.connect());
 afterEach(async () => await dbHandler.clear());
