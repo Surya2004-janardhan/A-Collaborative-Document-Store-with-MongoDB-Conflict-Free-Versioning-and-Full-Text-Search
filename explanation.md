@@ -1,90 +1,122 @@
 # Technical Explanation: Collaborative Document Store
 
-This document provides a deep dive into the architecture, data flows, and design decisions of the Wiki backend.
+This document provides a comprehensive deep-dive into the architecture, data structures, and core logic of the Wiki backend.
 
-## 🏗 System Architecture
+## 🏗 Schema Design & Rationale
 
-The system follows a classic Layered Architecture:
-1. **Model Layer**: Defines Mongoose schemas and TypeScript interfaces for Document entities.
-2. **Controller Layer**: Handles business logic, OCC validation, and aggregation pipelines.
-3. **Route Layer**: Exposes RESTful endpoints.
-4. **Maintenance Layer**: Standalone scripts for DB seeding and schema migrations.
+The project uses a single collection `documents`, but with a highly structured schema designed for concurrency and evolution.
+
+### 1. The Document Model (`src/models/Document.ts`)
+- **`slug`**: A human-readable, unique identifier derived from the title. It is indexed (`unique: true`) for O(1) retrieval.
+- **`version`**: An integer used for **Optimistic Concurrency Control (OCC)**. Every update increments this value.
+- **`revision_history`**: An array of historical snapshots. To prevent unbounded document growth, we use MongoDB's `$slice` operator to keep only the last 20 revisions.
+- **`metadata.author`**: Initially a string, now a structured object:
+  ```typescript
+  {
+    id: string | null;
+    name: string;
+    email: string | null;
+  }
+  ```
 
 ---
 
-## 🔄 Core Data Flows
+## 🔄 Core Logic Deep Dive
 
-### 1. Collaborative Update Flow (Optimistic Concurrency Control)
-To prevent "Lost Updates", we avoid pessimistic locks and use versioning:
-1. **Read**: User A and User B both fetch Version 5 of a document.
-2. **Edit**: Both make changes locally.
-3. **Submit (User A)**: User A sends Version 5. The server checks the DB. Since it's still Version 5, the update succeeds and increments it to Version 6.
-4. **Submit (User B)**: User B sends Version 5. The server checks the DB and finds Version 6.
-5. **Conflict**: The server returns `409 Conflict` along with the latest Version 6 data, allowing User B to merge changes.
+### 1. Collaborative Updates (Optimistic Concurrency Control)
 
-**Implementation**:
+The "Lost Update" problem occurs when two users edit the same version of a document, and the second one to save overwrites the first one's changes unknowingly.
+
+**How we solve it:**
+When a client sends an update, they MUST include the `version` they are currently looking at.
+
 ```typescript
-Document.findOneAndUpdate(
-  { slug, version: expectedVersion }, // Match exact version
-  { 
-    $set: { ... }, 
-    $inc: { version: 1 }, // Increment version atomically
-    $push: { revision_history: { ... } } // Add revision
-  }
-)
+// excerpt from src/controllers/documentController.ts
+const updatedDoc = await Document.findOneAndUpdate(
+  { slug, version: req.body.version }, // 1. Match version
+  {
+    $set: {
+      title: req.body.title,
+      content: req.body.content,
+      tags: req.body.tags,
+      'metadata.updatedAt': new Date()
+    },
+    $inc: { version: 1 }, // 2. Atomically increment version
+    $push: {
+      revision_history: {
+        $each: [{
+          content: req.body.content,
+          editor: req.body.authorName || 'Anonymous',
+          timestamp: new Date()
+        }],
+        $slice: -20 // 3. Keep only the last 20 revisions
+      }
+    }
+  },
+  { new: true }
+);
 ```
 
-### 2. Schema Evolution Flow
-When the `author` field changed from a simple `string` to a structured `object`, we implemented a zero-downtime strategy:
+If another user updated the document in the meantime, the `version` in the database will no longer match `req.body.version`. `findOneAndUpdate` will return `null`. We then catch this and return a `409 Conflict` with the latest data, forcing the user to resolve the conflict.
 
-#### A. Lazy Migration (On-Read)
-In the `getDocumentBySlug` flow:
-- Fetch doc from DB.
-- If `metadata.author` is a `string`, wrap it in the new object format ` { id: null, name: string, email: null }` before returning to the user.
-- This ensures the API is always consistent even if the DB is partially migrated.
+### 2. Full-Text Search Logic
 
-#### B. Background Migration (Batch)
-The `migrate_author_schema.ts` script:
-- Queries for docs where `metadata.author` type is `string`.
-- Processes in batches of 1,000 to minimize DB load.
-- Uses `bulkWrite` for high performance.
+We use MongoDB's **Text Search** engine. The schema has a compound text index:
+```typescript
+DocumentSchema.index({ title: 'text', content: 'text' }, { weights: { title: 10, content: 5 } });
+```
+- **Weights**: Matching words in the `title` are 2x more important than matches in the `content`.
+- **Relevance Scoring**:
+  ```typescript
+  const docs = await Document.find(
+    { $text: { $search: query } },
+    { score: { $meta: 'textScore' } }
+  ).sort({ score: { $meta: 'textScore' } });
+  ```
+  The results are automatically ranked by relevance (`textScore`).
+
+### 3. Analytics & Aggregation
+
+#### Most Edited Documents
+We use the `$size` operator inside a `$project` stage to count the elements in the `revision_history` array without having to fetch the whole array into memory.
+```typescript
+{ $project: { title: 1, editCount: { $size: '$revision_history' } } }
+```
+
+#### Tag Co-occurrence (Association Discovery)
+This is our most complex pipeline. It finds which tags appear together in the same documents.
+1. **$unwind**: Flattens the tags array so we have one document per tag.
+2. **Self-Join**: We use `$lookup` to join the collection with itself to find every other tag in the same document.
+3. **De-duplication**: To avoid counting `[A, B]` and `[B, A]` as two different pairs, we use `$match` with `$lt` to ensure we only count pairs where Tag A comes before Tag B alphabetically.
+
+### 4. Dual-Strategy Migration
+
+#### Lazy (On-Read)
+Implemented in the `getDocumentBySlug` controller. 
+- **The Check**: `if (typeof doc.metadata.author === 'string')`.
+- **The Action**: We transform it into the object format before sending the response. This "fixes" the data for the API consumer immediately without waiting for a database-wide update.
+
+#### Background (Batch)
+The `src/scripts/migrate_author_schema.ts` script uses `bulkWrite` for efficiency.
+- **Target**: `{ 'metadata.author': { $type: 'string' } }`.
+- **Performance**: We process in batches of 1,000 to avoid locking the database for long periods, making it safe for production use.
 
 ---
 
-## 📂 Key Functions & Logic
+## 🛠 File Structure Overview
 
-### `searchDocuments` (Full-Text Search)
-Uses MongoDB's `$text` operator. We project a `textScore` meta-field to rank results by how well they match the search query, then sort descending by that score.
-
-### `getMostEdited` (Aggregation)
-Uses the `$project` stage with `$size` operator on the `revision_history` array to calculate the number of edits without manual counting.
-
-### `getTagCooccurrence` (Advanced Aggregation)
-1. `$unwind` on tags to get individual items.
-2. `$lookup` back to the same collection to find pairings.
-3. `$match` with `$expr: { $lt: ['$tagA', '$tagB'] }` to ensure each pair is only counted once (avoiding duplicates like [A,B] and [B,A]).
-4. `$group` by the pair to count occurrences.
+- `src/index.ts`: Server entry point and database connection logic.
+- `src/routes/documentRoutes.ts`: Routing table. Maps URLs to Controller functions.
+- `src/controllers/documentController.ts`: **The Core Business Engine**. Contains all CRUD, OCC, Search, and Analytics logic.
+- `src/models/Document.ts`: **Data Definition**. Mongoose schema, TypeScript interfaces, and Index configurations.
+- `src/scripts/seed.ts`: Industrial-grade seeder using Wikipedia data.
+- `src/scripts/migrate_author_schema.ts`: Maintenance utility for mass data updates.
 
 ---
 
-## 🛠 File Structure
-- `src/index.ts`: Application entry and DB connection.
-- `src/models/Document.ts`: The "Source of Truth" for document structure and indexes.
-- `src/controllers/documentController.ts`: The "Brain" containing all aggregation logic and OCC checks.
-- `src/routes/documentRoutes.ts`: REST mapping for the controllers.
-- `src/scripts/seed.ts`: High-performance data generator (10k docs).
-- `src/scripts/migrate_author_schema.ts`: Bulk migration utility.
+## 🧪 Testing Architecture
 
----
-
-## 🧪 Testing Strategy
-
-The project includes a comprehensive test suite in the `src/tests/` directory:
-- **Environment**: Connects to a dedicated `wikidb_test` database on the local MongoDB container for rapid, reliable execution.
-- **Integration Tests**: Uses `Supertest` to simulate HTTP requests to the Express app.
-- **Coverage**:
-  - **Positive Cases**: Valid CRUD, Search, and Analytics.
-  - **Negative/Conflict Cases**: Outdated OCC versions (409), non-existent docs (404).
-  - **Edge Cases**: Special character slug generation, Lazy Migration on-read.
-
-
+Tests reside in `src/tests/` and use **Jest** + **Supertest**.
+- **`setup.ts`**: Manages the persistent test connection to `wikidb_test`.
+- **Integration Tests**: Verify end-to-end API contracts (Status codes, JSON structures).
+- **Concurrency Tests**: Specifically stress-test the OCC logic by firing simultaneous requests and verifying that only one increments the version while the others receive `409`.
