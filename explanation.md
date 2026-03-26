@@ -79,13 +79,12 @@ Uses the `$project` stage with `$size` operator on the `revision_history` array 
 
 ## 🧪 Testing Strategy
 
-The project includes a comprehensive test suite in the `tests/` directory:
-- **Isolated Environment**: Uses `mongodb-memory-server` to provide an ephemeral MongoDB instance for each test run.
+The project includes a comprehensive test suite in the `src/tests/` directory:
+- **Environment**: Connects to a dedicated `wikidb_test` database on the local MongoDB container for rapid, reliable execution.
 - **Integration Tests**: Uses `Supertest` to simulate HTTP requests to the Express app.
 - **Coverage**:
   - **Positive Cases**: Valid CRUD, Search, and Analytics.
   - **Negative/Conflict Cases**: Outdated OCC versions (409), non-existent docs (404).
   - **Edge Cases**: Special character slug generation, Lazy Migration on-read.
-  - **Concurrency**: Parallel simultaneous updates simulation to verify OCC atomicity.
 
 

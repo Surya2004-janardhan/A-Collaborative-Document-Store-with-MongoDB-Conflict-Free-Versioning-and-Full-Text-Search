@@ -17,7 +17,7 @@ beforeAll(async () => {
         {
             slug: 'node-doc',
             title: 'Node.js Tutorial',
-            content: 'Building APIs with Node.js and Express.',
+            content: 'Building APIs with Node.js and Express. A comprehensive guide.',
             tags: ['javascript', 'guide'],
             metadata: { author: { name: 'Admin', id: '0', email: null } }
         }

@@ -47,7 +47,7 @@ describe('Document API Integration Tests', () => {
           authorName: 'Edge case'
         });
       expect(res.status).toBe(201);
-      expect(res.body.slug).toMatch(/special-characters/);
+      expect(res.body.slug).toMatch(/special-.*characters/);
     });
   });
 

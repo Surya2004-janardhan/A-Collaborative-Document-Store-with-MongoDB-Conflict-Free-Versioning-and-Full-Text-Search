@@ -5,6 +5,7 @@
     "moduleResolution": "NodeNext",
     "rootDir": "./src",
     "outDir": "./dist",
+    "isolatedModules": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "strict": true,

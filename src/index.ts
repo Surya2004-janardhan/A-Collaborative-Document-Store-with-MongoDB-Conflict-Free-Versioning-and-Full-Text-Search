@@ -12,7 +12,7 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/wikidb';
 app.use(express.json());
 
 // Routes
-app.use('/api/documents', documentRoutes);
+app.use('/api', documentRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
